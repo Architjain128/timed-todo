@@ -1560,6 +1560,7 @@
     
     try {
       const doc = await db.collection('users').doc(currentUser.uid).get();
+
       if (doc.exists) {
         const userData = doc.data();
         if (userData.data) {
@@ -1597,7 +1598,6 @@
         await save(); // Save to Firestore
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(OLD_STORAGE_KEY);
-        console.log('✅ Migrated data from localStorage to Firestore');
       }
     } catch (error) {
       console.error('Error migrating data:', error);
@@ -1630,19 +1630,26 @@
   }
 
   function formatDate(d) {
-    return d.toISOString().slice(0, 10);
+    // Always use IST (Indian Standard Time) - UTC+5:30
+    const istDate = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const year = istDate.getFullYear();
+    const month = String(istDate.getMonth() + 1).padStart(2, '0');
+    const day = String(istDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   function renderDate() {
     const now = new Date();
     const dateStr = currentDate.toDateString();
+    // Always show IST time
     const timeStr = now.toLocaleTimeString('en-US', { 
+      timeZone: 'Asia/Kolkata',
       hour: '2-digit', 
       minute: '2-digit', 
       second: '2-digit',
       hour12: true 
     });
-    document.getElementById("dateTitle").innerText = `${dateStr} • ${timeStr}`;
+    document.getElementById("dateTitle").innerText = `${dateStr} • ${timeStr} IST`;
     document.getElementById("dateTitle").style.fontWeight = "normal";
     document.getElementById("dateTitle").style.textAlign = "center";
     document.getElementById("dateTitle").style.margin = "0";
@@ -1941,17 +1948,19 @@
     // Remove any existing indicators
     document.querySelectorAll('.current-time-indicator').forEach(el => el.remove());
     
+    // Always use IST (Indian Standard Time) - UTC+5:30
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
+    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const currentHour = istNow.getHours();
+    const currentMinute = istNow.getMinutes();
     
-    // Create local date string in YYYY-MM-DD format
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
+    // Create IST date string in YYYY-MM-DD format
+    const year = istNow.getFullYear();
+    const month = String(istNow.getMonth() + 1).padStart(2, '0');
+    const day = String(istNow.getDate()).padStart(2, '0');
     const todayDateKey = `${year}-${month}-${day}`;
     
-    console.log('Current time indicator - Looking for:', todayDateKey, 'Hour:', currentHour);
+    // console.log('Current time indicator (IST) - Looking for:', todayDateKey, 'Hour:', currentHour);
     
     // Find all slots that match today's date and current hour
     const allSlots = document.querySelectorAll('.slot[data-date-key][data-hour]');
@@ -1959,7 +1968,7 @@
     // Debug: log all slot dates
     const uniqueDates = new Set();
     allSlots.forEach(slot => uniqueDates.add(slot.dataset.dateKey));
-    console.log('Available dates in calendar:', Array.from(uniqueDates).sort());
+    // console.log('Available dates in calendar:', Array.from(uniqueDates).sort());
     
     // Filter slots to find matches for today
     let foundCount = 0;
@@ -1983,7 +1992,7 @@
       }
     });
     
-    console.log('Added time indicator to', foundCount, 'slot(s)');
+    // console.log('Added time indicator to', foundCount, 'slot(s)');
   }
 
   function renderSingleDayView() {
@@ -2065,7 +2074,7 @@
       const labelCell = document.createElement("div");
       labelCell.className = idx === 3 ? "day-label current-day" : "day-label";
       labelCell.style.borderRight = idx < 6 ? "2px solid #d1d5db" : "none";
-      const dateStr = day.toLocaleDateString('en-US', { 
+      const dateStr = day.toLocaleDateString('en-IN', { 
         weekday: 'short', 
         month: 'short', 
         day: 'numeric' 
