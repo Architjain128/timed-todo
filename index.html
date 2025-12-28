@@ -1,0 +1,2503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calendar Todo App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <style>
+    :root {
+      --calendar-scale: 1.5;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f7fb;
+      color: #222;
+    }
+    header {
+      padding: 10px 16px;
+      background: #1f2937;
+      color: #fff;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .header-icon {
+      font-size: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      animation: headerIconPulse 4s ease-in-out infinite;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+    }
+
+    @keyframes headerIconPulse {
+      0%, 100% {
+        transform: scale(1) rotate(0deg);
+      }
+      25% {
+        transform: scale(1.05) rotate(-3deg);
+      }
+      75% {
+        transform: scale(1.05) rotate(3deg);
+      }
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      user-select: none;
+    }
+
+    .title span:last-child {
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .title:hover .header-icon {
+      animation: none;
+      transform: scale(1.15) rotate(5deg);
+      transition: transform 0.3s ease;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      height: calc(100vh - 60px);
+    }
+    /* Untimed tasks */
+    .sidebar {
+      background: #ffffff;
+      border-right: 1px solid #e5e7eb;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: width 0.3s ease, min-width 0.3s ease, padding 0.3s ease;
+    }
+
+    .sidebar.collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      padding: 0 !important;
+      border-right: none;
+      overflow: hidden;
+    }
+
+    .sidebar-toggle {
+      /* position: absolute; */
+      top: 8px;
+      right: 8px;
+      background: transparent;
+      color: #6b7280;
+      border: none;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 6px;
+      border-radius: 6px;
+      transition: all 0.3s ease;
+    }
+
+    .sidebar-toggle:hover {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+
+    /* Hamburger lines */
+    .hamburger-line {
+      width: 20px;
+      height: 2px;
+      background: currentColor;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 2px;
+    }
+
+    .sidebar-toggle .hamburger-line:nth-child(1) {
+      width: 16px;
+      align-self: flex-start;
+      transform-origin: left center;
+    }
+
+    .sidebar-toggle .hamburger-line:nth-child(2) {
+      transform-origin: center;
+    }
+
+    .sidebar-toggle .hamburger-line:nth-child(3) {
+      width: 16px;
+      align-self: flex-start;
+      transform-origin: left center;
+    }
+
+    /* Arrow style when collapsed */
+    .sidebar.collapsed .sidebar-toggle {
+      position: fixed;
+      left: 12px;
+      top: 70px;
+      background: #3b82f6;
+      color: white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      gap: 0;
+    }
+
+    .sidebar.collapsed .sidebar-toggle:hover {
+      background: #2563eb;
+      transform: scale(1.1);
+    }
+
+    .sidebar.collapsed .hamburger-line {
+      position: absolute;
+      background: white;
+    }
+
+    /* Right-pointing arrow when collapsed */
+    .sidebar.collapsed .hamburger-line:nth-child(1) {
+      transform: rotate(45deg) translate(2px, 2px);
+      width: 12px;
+    }
+
+    .sidebar.collapsed .hamburger-line:nth-child(2) {
+      width: 16px;
+      transform: translateX(2px);
+      opacity: 1;
+    }
+
+    .sidebar.collapsed .hamburger-line:nth-child(3) {
+      transform: rotate(-45deg) translate(2px, -2px);
+      width: 12px;
+    }
+
+    /* Make toggle button more visible on mobile when collapsed */
+    @media (max-width: 768px) {
+      .sidebar.collapsed .sidebar-toggle {
+        width: 40px;
+        height: 40px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
+    }
+
+    .container {
+      transition: grid-template-columns 0.3s ease;
+    }
+
+    .container.sidebar-collapsed {
+      grid-template-columns: 0 1fr;
+    }
+
+    /* Pulse animation for collapsed state */
+    @keyframes sidebarPulse {
+      0%, 100% {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      }
+      50% {
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5), 0 0 15px rgba(59, 130, 246, 0.3);
+      }
+    }
+
+    .sidebar.collapsed .sidebar-toggle {
+      animation: sidebarPulse 2s ease-in-out infinite;
+    }
+
+    .sidebar.collapsed .sidebar-toggle:hover {
+      animation: none;
+    }
+    .sidebar h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      padding-right: 40px;
+    }
+    .task-input {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .task-input-row {
+      display: flex;
+      gap: 8px;
+    }
+    .task-input input {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+    }
+    .task-input select {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      background: white;
+      font-size: 14px;
+    }
+    button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      font-size: 14px;
+    }
+    button.secondary {
+      background: #6b7280;
+    }
+    .untimed-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      min-height: 100px;
+      padding: 8px;
+      margin: -8px;
+      border-radius: 6px;
+      transition: background 0.2s, border 0.2s;
+    }
+    .untimed-list.drag-over {
+      background: #dbeafe;
+      border: 2px dashed #3b82f6;
+    }
+    .untimed-list.drag-over::before {
+      content: '↓ Drop here to unschedule';
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 14px;
+      font-weight: 600;
+      color: #2563eb;
+      pointer-events: none;
+      z-index: 1000;
+    }
+    .completed-section {
+      margin-top: 12px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 12px;
+    }
+    .completed-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      padding: 8px;
+      background: #f9fafb;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      user-select: none;
+    }
+    .completed-header:hover {
+      background: #f3f4f6;
+    }
+    .completed-header h3 {
+      margin: 0;
+      font-size: 14px;
+      color: #6b7280;
+    }
+    .completed-count {
+      font-size: 12px;
+      color: #9ca3af;
+      background: #e5e7eb;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .completed-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .completed-list.collapsed {
+      display: none;
+    }
+    .arrow {
+      transition: transform 0.2s;
+    }
+    .arrow.collapsed {
+      transform: rotate(-90deg);
+    }
+    .task {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: grab;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+    .task.completed {
+      background: #d1d5db;
+      opacity: 0.7;
+    }
+    .task.completed .task-text {
+      text-decoration: line-through;
+      color: #4b5563;
+    }
+    .task-content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .task-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+    .task-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .task-duration {
+      font-size: 11px;
+      color: #6b7280;
+      background: #e5e7eb;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .delete-btn {
+      position: absolute;
+      top: 1px;
+      right: 1px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 2px;
+      width: 14px;
+      height: 14px;
+      font-size: 10px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      display: none;
+      z-index: 20;
+    }
+
+    /* Calendar */
+    .calendar {
+      padding: 0 16px 16px 16px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      position: sticky;
+      top: 0;
+      background: #f5f7fb;
+      z-index: 100;
+      padding: 8px 0;
+    }
+    .calendar-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+    .header-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .view-selector {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 14px;
+    }
+    .view-selector label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .view-selector input[type="radio"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 60px repeat(1, 1fr);
+      border: 1px solid #e5e7eb;
+      background: white;
+      position: relative;
+    }
+    .grid.three-day-view {
+      grid-template-columns: 60px 1fr 2fr 1fr;
+    }
+    .grid.seven-day-view {
+      grid-template-columns: 60px repeat(7, 1fr);
+    }
+    .day-column {
+      position: relative;
+      border-right: 2px solid #d1d5db;
+    }
+    .day-column:last-child {
+      border-right: none;
+    }
+    .day-label {
+      position: sticky;
+      top: 52px;
+      background: #f9fafb;
+      padding: 8px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 2px solid #d1d5db;
+      z-index: 50;
+      color: #374151;
+    }
+    .day-label.current-day {
+      background: #dbeafe;
+      color: #1f2937;
+      border-bottom-color: #3b82f6;
+    }
+    .time {
+      padding: 8px;
+      font-size: 12px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f3f4f6;
+    }
+    .slot {
+      min-height: 75px;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 0;
+      position: relative;
+    }
+    .three-day-view .slot {
+      border-right: 1px solid #f3f4f6;
+    }
+    .three-day-view .slot:nth-child(4n) {
+      border-right: 2px solid #d1d5db;
+    }
+    .three-day-view .slot:last-child {
+      border-right: none;
+    }
+    .seven-day-view .slot {
+      border-right: 1px solid #f3f4f6;
+    }
+    .seven-day-view .slot:nth-child(8n) {
+      border-right: 2px solid #d1d5db;
+    }
+    .seven-day-view .slot:last-child {
+      border-right: none;
+    }
+    .slot::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 1px;
+      background: #e5e7eb;
+      pointer-events: none;
+    }
+    .slot::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 25%;
+      height: 1px;
+      background: #f3f4f6;
+      pointer-events: none;
+    }
+    .slot-after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 75%;
+      height: 1px;
+      background: #f3f4f6;
+      pointer-events: none;
+    }
+    .slot-wrapper {
+      position: relative;
+    }
+    .event {
+      background: #dbeafe;
+      border: 1px solid #93c5fd;
+      border-radius: 6px;
+      padding: 0 4px;
+      font-size: 12px;
+      margin: 0;
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      cursor: move;
+      user-select: none;
+      z-index: 10;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .event.dragging {
+      opacity: 0.5;
+      cursor: grabbing;
+    }
+    .event.completed {
+      background: #9ca3af;
+      border-color: #6b7280;
+      opacity: 0.8;
+    }
+    .event.completed strong {
+      text-decoration: line-through;
+      color: #374151;
+    }
+    .event-header {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: 100%;
+      min-width: 0;
+    }
+    .event-first-line {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: 100%;
+      min-width: 0;
+    }
+    .event-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .event-title strong {
+      display: inline;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .event-title small {
+      display: none;
+    }
+    .event-duration {
+      font-size: 9px;
+      color: #1f2937;
+      background: rgba(255,255,255,0.6);
+      padding: 1px 3px;
+      border-radius: 2px;
+      white-space: nowrap;
+    }
+    .event-separator {
+      font-size: 9px;
+      color: #6b7280;
+    }
+    input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .event:hover .resize-handle {
+      opacity: 0.7;
+    }
+    .resize-handle:hover {
+      opacity: 1 !important;
+      background: #2563eb;
+    }
+    .event small {
+      display: block;
+      color: #374151;
+    }
+    .resize-handle {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 8px;
+      background: #3b82f6;
+      cursor: ns-resize;
+      opacity: 0;
+      transition: opacity 0.2s;
+      border-bottom-left-radius: 6px;
+      border-bottom-right-radius: 6px;
+      z-index: 15;
+    }
+    .event.resizing {
+      opacity: 0.9;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      border-color: #2563eb;
+      border-width: 2px;
+    }
+    .event.resizing .resize-handle {
+      opacity: 1 !important;
+      background: #2563eb;
+      height: 10px;
+    }
+    .delete-btn {
+      position: absolute;
+      top: 1px;
+      right: 1px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 2px;
+      width: 14px;
+      height: 14px;
+      font-size: 10px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      display: none;
+      z-index: 20;
+    }
+    .event:hover .delete-btn {
+      display: block;
+    }
+    .task:hover .delete-btn {
+      display: block;
+    }
+    .task-text:hover {
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-decoration-color: #9ca3af;
+    }
+    .event-text:hover {
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-decoration-color: #6b7280;
+    }
+
+    /* ===== ZEN MODE ===== */
+    .zen-mode-btn {
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 35px;
+      height: 35px;
+      font-size: 20px;
+      cursor: pointer;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: zenPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes zenPulse {
+      0%, 100% {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
+      50% {
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.5), 0 0 20px rgba(99, 102, 241, 0.3);
+      }
+    }
+
+    .zen-mode-btn:hover {
+      background: rgba(79, 70, 229, 1);
+      transform: scale(1.1);
+      animation: none;
+    }
+
+    body.zen-mode header {
+      display: none;
+    }
+
+    body.zen-mode .sidebar {
+      display: none;
+    }
+
+    body.zen-mode .container {
+      grid-template-columns: 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    body.zen-mode .calendar {
+      padding-top: 16px;
+      overflow-y: auto;
+      height: 100vh;
+    }
+
+    body.zen-mode .calendar-header {
+      display: none;
+    }
+
+    body.zen-mode .zen-mode-btn {
+      background: rgba(239, 68, 68, 0.9);
+      top: 16px;
+      right: 16px;
+    }
+
+    body.zen-mode .zen-mode-btn:hover {
+      background: rgba(220, 38, 38, 1);
+    }
+
+    .zen-mode-tooltip {
+      position: absolute;
+      right: 60px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+
+    .zen-mode-btn:hover .zen-mode-tooltip {
+      opacity: 1;
+    }
+
+    body.zen-mode .view-selector {
+      display: none !important;
+    }
+
+    body.zen-mode .sidebar-toggle {
+      display: none;
+    }
+
+    /* Smooth transitions for zen mode */
+    header, .sidebar {
+      transition: opacity 0.3s, transform 0.3s;
+    }
+
+    body.zen-mode .calendar {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 16px 24px 24px 24px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Better focus in zen mode */
+    body.zen-mode {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    }
+
+    body.zen-mode .grid {
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+      border-radius: 12px;
+      overflow: visible;
+      border: 1px solid rgba(255, 255, 255, 0.5);
+    }
+
+    body.zen-mode .day-label {
+      position: sticky;
+      top: 0;
+      z-index: 60;
+      background: #f9fafb;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      font-size: 16px;
+      padding: 12px;
+    }
+
+    body.zen-mode .day-label.current-day {
+      background: #dbeafe;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    /* Zen mode current time indicator */
+    body.zen-mode .time {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    /* Zen mode date display */
+    .zen-date-display {
+      display: none;
+      text-align: center;
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2937;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    body.zen-mode .zen-date-display {
+      display: flex;
+    }
+
+    .zen-nav-btn {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .zen-nav-btn:hover {
+      background: #2563eb;
+      transform: scale(1.1);
+    }
+
+    .zen-date-text {
+      flex: 1;
+      max-width: 400px;
+    }
+
+    /* Zen mode notification */
+    .zen-notification {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(99, 102, 241, 0.95);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 999;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .zen-notification.show {
+      opacity: 1;
+    }
+
+    /* ===== AUTHENTICATION STYLES ===== */
+    .auth-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+
+    .auth-container.hidden {
+      display: none;
+    }
+
+    .auth-box {
+      background: white;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 400px;
+      width: 90%;
+      animation: slideUp 0.4s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .auth-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .auth-header h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .auth-header p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 14px;
+    }
+
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .auth-input {
+      padding: 12px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 15px;
+      transition: all 0.3s;
+      outline: none;
+    }
+
+    .auth-input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .auth-btn {
+      padding: 14px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .auth-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .auth-btn:active {
+      transform: translateY(0);
+    }
+
+    .auth-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .auth-toggle {
+      text-align: center;
+      margin-top: 20px;
+      color: #6b7280;
+      font-size: 14px;
+    }
+
+    .auth-toggle button {
+      background: none;
+      border: none;
+      color: #667eea;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .auth-error {
+      background: #fee2e2;
+      color: #dc2626;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+      margin-bottom: 16px;
+    }
+
+    .auth-error.show {
+      display: block;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: white;
+      font-size: 14px;
+    }
+
+    .logout-btn {
+      padding: 8px 16px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+
+    .logout-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .app-content.hidden {
+      display: none;
+    }
+
+    /* Mobile responsiveness for auth */
+    @media (max-width: 480px) {
+      .auth-box {
+        padding: 30px 24px;
+      }
+
+      .auth-header h1 {
+        font-size: 24px;
+      }
+
+      .auth-input {
+        padding: 14px;
+        font-size: 16px; /* Prevents zoom on iOS */
+      }
+    }
+  </style>
+</head>
+<body>
+    <!-- Authentication UI -->
+    <div class="auth-container" id="authContainer">
+      <div class="auth-box">
+        <div class="auth-header">
+          <h1><span>🗓️</span> Calendar Todo</h1>
+          <p id="authSubtitle">Sign in to access your tasks</p>
+        </div>
+
+        <div class="auth-error" id="authError"></div>
+
+        <form class="auth-form" id="authForm" onsubmit="handleAuth(event)">
+          <input 
+            type="email" 
+            class="auth-input" 
+            id="authEmail" 
+            placeholder="Email" 
+            required 
+            autocomplete="email"
+          />
+          <input 
+            type="password" 
+            class="auth-input" 
+            id="authPassword" 
+            placeholder="Password" 
+            required 
+            autocomplete="current-password"
+            minlength="6"
+          />
+          <button type="submit" class="auth-btn" id="authSubmitBtn">
+            Sign In
+          </button>
+        </form>
+
+        <div class="auth-toggle">
+          <span id="authToggleText">Don't have an account?</span>
+          <button type="button" onclick="toggleAuthMode()">Sign Up</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App Content -->
+    <div class="app-content hidden" id="appContent">
+      <!-- Zen Mode Notification -->
+      <div class="zen-notification" id="zenNotification"></div>
+
+      <header style="display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
+        <div class="title">
+          <span>
+            <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Toggle Sidebar ([ or ])">
+              <span class="hamburger-line"></span>
+              <span class="hamburger-line"></span>
+              <span class="hamburger-line"></span>
+            </button>
+          </span>
+  
+            <span class="header-icon">🗓️</span>
+            <span>Calendar Todo</span>
+        </div>
+         <div style="display: flex;gap: 10px; align-items: center;">
+           <div class="user-info" id="userInfo" style="display: none;">
+             <span>👤</span>
+             <span id="userEmail"></span>
+           </div>
+           
+           <button class="logout-btn" id="logoutBtn" onclick="handleLogout()" style="display: none;">
+             Logout
+           </button>
+           
+           <button class="secondary" onclick="clearCalendar()">Clear Calendar</button>
+           
+            <!-- Zen Mode Toggle Button -->
+           <button class="zen-mode-btn" onclick="toggleZenMode()" title="Toggle Zen Mode (Press Z)">
+             <span class="zen-icon">🧘</span>
+             <span class="zen-mode-tooltip">Zen Mode (Z)</span>
+           </button>
+         </div>
+
+    </header>
+<div class="container">
+  <!-- Untimed tasks -->
+  <div class="sidebar" id="sidebar">
+    <!-- Sidebar Toggle Button -->
+
+    
+    <h2>Untimed Tasks</h2>
+    <p style="font-size: 11px; color: #6b7280; margin: 0 0 8px 0; font-style: italic;">💡 Double-click to edit | Drag calendar events here to unschedule</p>
+    <div class="task-input">
+      <div class="task-input-row">
+        <input id="newTask" placeholder="New task…" onkeypress="if(event.key==='Enter') addUntimedTask()" />
+      </div>
+      <div class="task-input-row" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
+        <select id="taskDuration">
+          <option value="15">15 min</option>
+          <option value="30" selected>30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">1 hour</option>
+          <option value="90">1.5 hours</option>
+          <option value="120">2 hours</option>
+          <option value="180">3 hours</option>
+          <option value="240">4 hours</option>
+        </select>
+        <button onclick="addUntimedTask()">Add</button>
+      </div>
+      </div>
+      <div class="untimed-list" id="untimedList"></div>
+      <div class="completed-section">
+        <div class="completed-header" onclick="toggleCompletedSection()">
+          <h3>Completed Tasks (Untimed)</h3>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="completed-count" id="completedCount">0</span>
+            <span class="arrow" id="completedArrow">▼</span>
+          </div>
+        </div>
+        <div class="completed-list" id="completedList"></div>
+      </div>
+      <div class="footer" style="font-size: 12px; color: #6b7280; text-align: center; margin-top: 10px;">Made with ❤️ by <a href="https://architjain128.github.io" style="text-decoration: none; font-weight: bolder;">Archit Jain</a></div>
+    </div>
+
+  <!-- Calendar -->
+  <div class="calendar">
+    <!-- Zen Mode Date Display -->
+    <div class="zen-date-display" id="zenDateDisplay">
+      <button class="zen-nav-btn" onclick="changeDay(-1)" title="Previous day">◀</button>
+      <div class="zen-date-text" id="zenDateText"></div>
+      <button class="zen-nav-btn" onclick="jumpToToday()" title="Today">📅</button>
+      <button class="zen-nav-btn" onclick="changeDay(1)" title="Next day">▶</button>
+    </div>
+    
+    <div class="calendar-header">
+      <h2 id="dateTitle"></h2>
+      <div class="header-controls">
+        <div class="view-selector">
+          <label>
+            <input type="radio" name="viewMode" value="1" checked onchange="changeViewMode()">
+            <span>1 Day</span>
+          </label>
+          <label>
+            <input type="radio" name="viewMode" value="3" onchange="changeViewMode()">
+            <span>3 Days</span>
+          </label>
+          <label>
+            <input type="radio" name="viewMode" value="7" onchange="changeViewMode()">
+            <span>7 Days</span>
+          </label>
+        </div>
+        <button class="secondary" onclick="changeDay(-1)">◀</button>
+        <button onclick="jumpToToday()">Today</button>
+        <button class="secondary" onclick="changeDay(1)">▶</button>
+      </div>
+    </div>
+    <div class="grid" id="calendarGrid"></div>
+  </div>
+</div>
+
+<script>
+  // ===== SCALE SETTINGS =====
+  // Change this value to scale the entire calendar (1 = normal, 2 = 2x, etc.)
+  const CALENDAR_SCALE = 2;
+  
+  const HOURS = Array.from({ length: 24 }, (_, i) => i);
+  let currentDate = new Date();
+  let viewMode = 1; // 1, 3, or 7 days
+  let isZenMode = false;
+  let isSidebarCollapsed = false;
+
+  // Check if mobile device
+  function isMobileDevice() {
+    return window.innerWidth <= 768 || 
+           /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+
+  // Sidebar Toggle functionality
+  function toggleSidebar() {
+    isSidebarCollapsed = !isSidebarCollapsed;
+    const sidebar = document.getElementById('sidebar');
+    const container = document.querySelector('.container');
+    
+    if (isSidebarCollapsed) {
+      sidebar.classList.add('collapsed');
+      container.classList.add('sidebar-collapsed');
+    } else {
+      sidebar.classList.remove('collapsed');
+      container.classList.remove('sidebar-collapsed');
+    }
+  }
+
+  // Load sidebar state
+  function loadSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const container = document.querySelector('.container');
+    
+    // On mobile, always start collapsed
+    if (isMobileDevice()) {
+      isSidebarCollapsed = true;
+      sidebar.classList.add('collapsed');
+      container.classList.add('sidebar-collapsed');
+      return;
+    }
+  }
+
+  // Zen Mode functionality
+  function toggleZenMode() {
+    isZenMode = !isZenMode;
+    document.body.classList.toggle('zen-mode', isZenMode);
+    
+    // Save zen mode state
+    localStorage.setItem('zen_mode', isZenMode);
+    
+    // Force single day view in zen mode
+    if (isZenMode) {
+      viewMode = 1;
+      // Uncheck other view options
+      document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
+        radio.checked = radio.value === '1';
+      });
+      renderCalendar();
+    }
+    
+    // Update button icon
+    const zenIcon = document.querySelector('.zen-icon');
+    if (zenIcon) {
+      zenIcon.textContent = isZenMode ? '✕' : '🧘';
+    }
+    
+    // Show notification
+    showZenNotification(isZenMode ? '🧘 Zen Mode - Pure focus on your calendar' : '👋 Back to normal view');
+  }
+
+  function showZenNotification(message) {
+    const notification = document.getElementById('zenNotification');
+    if (notification) {
+      notification.textContent = message;
+      notification.classList.add('show');
+      
+      setTimeout(() => {
+        notification.classList.remove('show');
+      }, 2000);
+    }
+  }
+
+  // Load zen mode state on page load
+  function loadZenMode() {
+    const savedZenMode = localStorage.getItem('zen_mode') === 'true';
+    if (savedZenMode) {
+      isZenMode = true;
+      document.body.classList.add('zen-mode');
+      const zenIcon = document.querySelector('.zen-icon');
+      if (zenIcon) {
+        zenIcon.textContent = '✕';
+      }
+      viewMode = 1;
+    }
+  }
+
+  // Generate or retrieve UUID for unique storage
+  function getOrCreateUUID() {
+    const UUID_KEY = "calendar_todo_uuid";
+    let uuid = localStorage.getItem(UUID_KEY);
+    
+    if (!uuid) {
+      // Generate UUID v4
+      uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+      localStorage.setItem(UUID_KEY, uuid);
+    }
+    
+    return uuid;
+  }
+
+  // Check if old key exists (without UUID), if so use that
+  const OLD_STORAGE_KEY = "calendar_todo_data_v4";
+  let STORAGE_KEY;
+  
+  if (localStorage.getItem(OLD_STORAGE_KEY)) {
+    // Use existing data without UUID
+    STORAGE_KEY = OLD_STORAGE_KEY;
+  } else {
+    // Generate UUID for new installations
+    const USER_UUID = getOrCreateUUID();
+    STORAGE_KEY = `calendar_todo_data_v4_${USER_UUID}`;
+  }
+  
+  let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+    untimed: [], // [{ text, duration, completed }]
+    events: {} // date -> [{ hour, minute, text, duration, id, completed }]
+  };
+
+  let resizing = null; // { eventId, startY, originalDuration }
+  let completedSectionCollapsed = false;
+
+  // Daily cleanup - move incomplete tasks back to untimed
+  function checkDailyCleanup() {
+    const LAST_CLEANUP_KEY = "last_cleanup_date";
+    const today = new Date().toDateString();
+    const lastCleanup = localStorage.getItem(LAST_CLEANUP_KEY);
+    
+    if (lastCleanup !== today) {
+      // Run cleanup - move incomplete calendar tasks to untimed
+      moveIncompleteTasksToUntimed();
+      localStorage.setItem(LAST_CLEANUP_KEY, today);
+    }
+    
+    // Schedule next check at midnight
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    const msUntilMidnight = tomorrow - now;
+    
+    setTimeout(() => {
+      checkDailyCleanup();
+    }, msUntilMidnight);
+  }
+
+  function moveIncompleteTasksToUntimed() {
+    let movedCount = 0;
+    
+    // Check all dates in the events
+    Object.keys(data.events).forEach(dateKey => {
+      const date = new Date(dateKey);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Only process past and current dates
+      if (date <= today) {
+        const eventsForDate = data.events[dateKey];
+        const remainingEvents = [];
+        
+        eventsForDate.forEach(event => {
+          if (!event.completed) {
+            // Move incomplete event back to untimed
+            data.untimed.push({
+              text: event.text,
+              duration: event.duration,
+              completed: false
+            });
+            movedCount++;
+          } else {
+            // Keep completed events on calendar
+            remainingEvents.push(event);
+          }
+        });
+        
+        data.events[dateKey] = remainingEvents;
+      }
+    });
+    
+    if (movedCount > 0) {
+      save();
+      renderUntimed();
+      renderCalendar();
+      console.log(`Daily cleanup: Moved ${movedCount} incomplete tasks to untimed section`);
+    }
+  }
+
+  // Start daily cleanup checker
+  checkDailyCleanup();
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }
+
+  function formatDate(d) {
+    return d.toISOString().slice(0, 10);
+  }
+
+  function renderDate() {
+    const now = new Date();
+    const dateStr = currentDate.toDateString();
+    const timeStr = now.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit',
+      hour12: true 
+    });
+    document.getElementById("dateTitle").innerText = `${dateStr} • ${timeStr}`;
+    document.getElementById("dateTitle").style.fontWeight = "normal";
+    document.getElementById("dateTitle").style.textAlign = "center";
+    document.getElementById("dateTitle").style.margin = "0";
+    document.getElementById("dateTitle").style.padding = "0";
+    document.getElementById("dateTitle").style.textTransform = "uppercase";
+    document.getElementById("dateTitle").style.letterSpacing = "0.1em";
+    document.getElementById("dateTitle").style.textShadow = "0 0 10px rgba(0, 0, 0, 0.1)";
+    
+    // Update zen mode date display
+    const zenDateText = document.getElementById("zenDateText");
+    if (zenDateText) {
+      zenDateText.innerText = `📅 ${dateStr}`;
+    }
+  }
+
+  // Update clock every second
+  setInterval(renderDate, 1000);
+
+  function clearCalendar() {
+    data = {
+      untimed: [],
+      events: {}
+    };
+    save();
+    renderUntimed();
+    renderCalendar();
+  }
+
+  function formatDuration(minutes) {
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+
+  function renderUntimed() {
+    const list = document.getElementById("untimedList");
+    const completedListEl = document.getElementById("completedList");
+    const completedCountEl = document.getElementById("completedCount");
+    
+    list.innerHTML = "";
+    completedListEl.innerHTML = "";
+    
+    const activeTasks = [];
+    const completedTasks = [];
+    
+    data.untimed.forEach((task, idx) => {
+      // Handle old format (string) vs new format (object)
+      const taskObj = typeof task === 'string' ? { text: task, duration: 30, completed: false } : 
+                      { ...task, completed: task.completed || false };
+      
+      if (taskObj.completed) {
+        completedTasks.push({ taskObj, idx });
+      } else {
+        activeTasks.push({ taskObj, idx });
+      }
+    });
+    
+    // Render active tasks
+    activeTasks.forEach(({ taskObj, idx }) => {
+      const div = createTaskElement(taskObj, idx);
+      list.appendChild(div);
+    });
+    
+    // Render completed tasks
+    completedTasks.forEach(({ taskObj, idx }) => {
+      const div = createTaskElement(taskObj, idx);
+      completedListEl.appendChild(div);
+    });
+    
+    // Update completed count
+    completedCountEl.textContent = completedTasks.length;
+  }
+
+  function createTaskElement(taskObj, idx) {
+    const div = document.createElement("div");
+    div.className = `task ${taskObj.completed ? 'completed' : ''}`;
+    div.draggable = true;
+    div.style.position = "relative";
+    
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "delete-btn";
+    deleteBtn.innerHTML = "×";
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      deleteUntimedTask(idx);
+    };
+    
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = taskObj.completed;
+    checkbox.onclick = (e) => {
+      e.stopPropagation();
+      toggleUntimedTask(idx);
+    };
+    
+    const content = document.createElement("div");
+    content.className = "task-content";
+    
+    const row = document.createElement("div");
+    row.className = "task-row";
+    row.innerHTML = `<span class="task-text">${taskObj.text}</span><span class="task-duration">${formatDuration(taskObj.duration)}</span>`;
+    
+    content.appendChild(row);
+    
+    div.appendChild(deleteBtn);
+    div.appendChild(checkbox);
+    div.appendChild(content);
+    
+    // Double-click to edit
+    const taskTextSpan = row.querySelector('.task-text');
+    taskTextSpan.ondblclick = (e) => {
+      e.stopPropagation();
+      startEditUntimedTask(idx, taskObj, taskTextSpan);
+    };
+    taskTextSpan.style.cursor = "text";
+    
+    div.ondragstart = e => {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ type: "untimed", idx }));
+    };
+    
+    return div;
+  }
+
+  function toggleCompletedSection() {
+    completedSectionCollapsed = !completedSectionCollapsed;
+    const completedList = document.getElementById("completedList");
+    const arrow = document.getElementById("completedArrow");
+    
+    if (completedSectionCollapsed) {
+      completedList.classList.add("collapsed");
+      arrow.classList.add("collapsed");
+    } else {
+      completedList.classList.remove("collapsed");
+      arrow.classList.remove("collapsed");
+    }
+  }
+
+  function toggleUntimedTask(idx) {
+    if (data.untimed[idx]) {
+      const task = data.untimed[idx];
+      const taskObj = typeof task === 'string' ? { text: task, duration: 30, completed: false } : task;
+      taskObj.completed = !taskObj.completed;
+      data.untimed[idx] = taskObj;
+      save();
+      renderUntimed();
+    }
+  }
+
+  function deleteUntimedTask(idx) {
+    data.untimed.splice(idx, 1);
+    save();
+    renderUntimed();
+  }
+
+  function startEditUntimedTask(idx, taskObj, textElement) {
+    const currentText = taskObj.text;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = currentText;
+    input.style.width = "100%";
+    input.style.border = "1px solid #3b82f6";
+    input.style.borderRadius = "4px";
+    input.style.padding = "4px 6px";
+    input.style.fontSize = "14px";
+    input.style.background = "white";
+    input.style.outline = "none";
+    
+    const saveEdit = () => {
+      const newText = input.value.trim();
+      if (newText && newText !== currentText) {
+        taskObj.text = newText;
+        data.untimed[idx] = taskObj;
+        save();
+      }
+      renderUntimed();
+    };
+    
+    const cancelEdit = () => {
+      renderUntimed();
+    };
+    
+    input.onblur = saveEdit;
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveEdit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelEdit();
+      }
+    };
+    
+    textElement.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  function formatTime(hour, minute) {
+    const min = minute || 0;
+    return `${hour}:${min.toString().padStart(2, '0')}`;
+  }
+
+  function eventsOverlap(event1, event2) {
+    const start1 = event1.hour * 60 + (event1.minute || 0);
+    const end1 = start1 + event1.duration;
+    const start2 = event2.hour * 60 + (event2.minute || 0);
+    const end2 = start2 + event2.duration;
+    return start1 < end2 && start2 < end1;
+  }
+
+  function getEventColumns(events, dateKey) {
+    // Group overlapping events into columns
+    const columns = [];
+    const eventColumns = new Map();
+
+    events.forEach(event => {
+      let placed = false;
+      
+      // Try to place in existing column
+      for (let i = 0; i < columns.length; i++) {
+        let canPlace = true;
+        for (const existingEvent of columns[i]) {
+          if (eventsOverlap(event, existingEvent)) {
+            canPlace = false;
+            break;
+          }
+        }
+        if (canPlace) {
+          columns[i].push(event);
+          eventColumns.set(event.id, { column: i, totalColumns: 0 });
+          placed = true;
+          break;
+        }
+      }
+      
+      // Create new column if needed
+      if (!placed) {
+        columns.push([event]);
+        eventColumns.set(event.id, { column: columns.length - 1, totalColumns: 0 });
+      }
+    });
+
+    // Update total columns for each event
+    eventColumns.forEach((value, key) => {
+      value.totalColumns = columns.length;
+    });
+
+    return eventColumns;
+  }
+
+  function changeViewMode() {
+    // Prevent changing view mode in zen mode
+    if (isZenMode) {
+      viewMode = 1;
+      document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
+        radio.checked = radio.value === '1';
+      });
+      return;
+    }
+    
+    const selected = document.querySelector('input[name="viewMode"]:checked');
+    viewMode = parseInt(selected.value);
+    renderCalendar();
+  }
+
+  function renderCalendar() {
+    const grid = document.getElementById("calendarGrid");
+    grid.innerHTML = "";
+    
+    if (viewMode === 1) {
+      grid.className = 'grid';
+      renderSingleDayView();
+    } else if (viewMode === 3) {
+      grid.className = 'grid three-day-view';
+      renderThreeDayView();
+    } else if (viewMode === 7) {
+      grid.className = 'grid seven-day-view';
+      renderSevenDayView();
+    }
+  }
+
+  function renderSingleDayView() {
+    const grid = document.getElementById("calendarGrid");
+    const dateKey = formatDate(currentDate);
+    if (!data.events[dateKey]) data.events[dateKey] = [];
+
+    // Ensure all events have IDs and minute values
+    data.events[dateKey].forEach((ev, idx) => {
+      if (!ev.id) ev.id = Date.now() + idx;
+      if (ev.minute === undefined) ev.minute = 0;
+    });
+
+    const eventColumns = getEventColumns(data.events[dateKey], dateKey);
+    const renderedEvents = new Set();
+
+    // Add day label header (consistent with 3-day view)
+    const timeHeader = document.createElement("div");
+    timeHeader.className = "time";
+    timeHeader.style.borderBottom = "2px solid #d1d5db";
+    grid.appendChild(timeHeader);
+
+    const labelCell = document.createElement("div");
+    labelCell.className = "day-label current-day";
+    const dateStr = currentDate.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    labelCell.textContent = dateStr;
+    grid.appendChild(labelCell);
+
+    HOURS.forEach(h => {
+      const time = document.createElement("div");
+      time.className = "time";
+      time.innerText = `${h}:00`;
+
+      const slot = document.createElement("div");
+      slot.className = "slot";
+      slot.ondragover = e => e.preventDefault();
+      slot.ondrop = e => onDrop(e, h, slot, currentDate);
+
+      const marker = document.createElement("div");
+      marker.className = "slot-after";
+      slot.appendChild(marker);
+
+      data.events[dateKey]
+        .filter(ev => ev.hour === h && !renderedEvents.has(ev.id))
+        .forEach(ev => {
+          renderedEvents.add(ev.id);
+          const evDiv = createEventElement(ev, h, eventColumns, dateKey);
+          slot.appendChild(evDiv);
+        });
+
+      grid.appendChild(time);
+      grid.appendChild(slot);
+    });
+  }
+
+  function renderSevenDayView() {
+    const grid = document.getElementById("calendarGrid");
+    
+    // Calculate 7 days starting from 3 days before current date
+    const days = [-3, -2, -1, 0, 1, 2, 3].map(offset => {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + offset);
+      return d;
+    });
+
+    // Add day label headers
+    const timeHeader = document.createElement("div");
+    timeHeader.className = "time";
+    timeHeader.style.borderBottom = "2px solid #d1d5db";
+    grid.appendChild(timeHeader);
+
+    days.forEach((day, idx) => {
+      const labelCell = document.createElement("div");
+      labelCell.className = idx === 3 ? "day-label current-day" : "day-label";
+      labelCell.style.borderRight = idx < 6 ? "2px solid #d1d5db" : "none";
+      const dateStr = day.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+      labelCell.textContent = dateStr;
+      grid.appendChild(labelCell);
+    });
+
+    HOURS.forEach(h => {
+      const time = document.createElement("div");
+      time.className = "time";
+      time.innerText = `${h}:00`;
+      grid.appendChild(time);
+
+      days.forEach((day, idx) => {
+        const dateKey = formatDate(day);
+        if (!data.events[dateKey]) data.events[dateKey] = [];
+
+        data.events[dateKey].forEach((ev, idx) => {
+          if (!ev.id) ev.id = Date.now() + idx;
+          if (ev.minute === undefined) ev.minute = 0;
+        });
+
+        const eventColumns = getEventColumns(data.events[dateKey], dateKey);
+
+        const slot = document.createElement("div");
+        slot.className = "slot";
+        slot.style.borderRight = idx < 6 ? "2px solid #d1d5db" : "none";
+        slot.ondragover = e => e.preventDefault();
+        slot.ondrop = e => onDrop(e, h, slot, day);
+
+        const marker = document.createElement("div");
+        marker.className = "slot-after";
+        slot.appendChild(marker);
+
+        data.events[dateKey]
+          .filter(ev => ev.hour === h)
+          .forEach(ev => {
+            const evDiv = createEventElement(ev, h, eventColumns, dateKey);
+            slot.appendChild(evDiv);
+          });
+
+        grid.appendChild(slot);
+      });
+    });
+  }
+
+  function renderThreeDayView() {
+    const grid = document.getElementById("calendarGrid");
+    const days = [-1, 0, 1].map(offset => {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + offset);
+      return d;
+    });
+
+    // Add day label headers
+    const timeHeader = document.createElement("div");
+    timeHeader.className = "time";
+    timeHeader.style.borderBottom = "2px solid #d1d5db";
+    grid.appendChild(timeHeader);
+
+    days.forEach((day, idx) => {
+      const labelCell = document.createElement("div");
+      labelCell.className = idx === 1 ? "day-label current-day" : "day-label";
+      labelCell.style.borderRight = idx < 2 ? "2px solid #d1d5db" : "none";
+      const dateStr = day.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+      labelCell.textContent = dateStr;
+      grid.appendChild(labelCell);
+    });
+
+    HOURS.forEach(h => {
+      const time = document.createElement("div");
+      time.className = "time";
+      time.innerText = `${h}:00`;
+      grid.appendChild(time);
+
+      days.forEach((day, idx) => {
+        const dateKey = formatDate(day);
+        if (!data.events[dateKey]) data.events[dateKey] = [];
+
+        data.events[dateKey].forEach((ev, idx) => {
+          if (!ev.id) ev.id = Date.now() + idx;
+          if (ev.minute === undefined) ev.minute = 0;
+        });
+
+        const eventColumns = getEventColumns(data.events[dateKey], dateKey);
+
+        const slot = document.createElement("div");
+        slot.className = "slot";
+        slot.style.borderRight = idx < 2 ? "2px solid #d1d5db" : "none";
+        slot.ondragover = e => e.preventDefault();
+        slot.ondrop = e => onDrop(e, h, slot, day);
+
+        const marker = document.createElement("div");
+        marker.className = "slot-after";
+        slot.appendChild(marker);
+
+        data.events[dateKey]
+          .filter(ev => ev.hour === h)
+          .forEach(ev => {
+            const evDiv = createEventElement(ev, h, eventColumns, dateKey);
+            slot.appendChild(evDiv);
+          });
+
+        grid.appendChild(slot);
+      });
+    });
+  }
+
+  function createEventElement(ev, h, eventColumns, dateKey) {
+    const evObj = typeof ev.text === 'string' && ev.duration ? ev : { ...ev, duration: 30, completed: false };
+    evObj.completed = evObj.completed || false;
+    evObj.minute = evObj.minute || 0;
+
+    const evDiv = document.createElement("div");
+    evDiv.className = `event ${evObj.completed ? 'completed' : ''}`;
+    evDiv.dataset.eventId = evObj.id;
+    evDiv.dataset.dateKey = dateKey;
+
+    // Fixed slot height - must match CSS .slot min-height
+    const slotHeight = 75;
+    const pixelsPerMinute = slotHeight / 60;
+    
+    // Exact positioning
+    const topOffset = evObj.minute * pixelsPerMinute;
+    const eventHeight = evObj.duration * pixelsPerMinute;
+    
+    evDiv.style.height = `${eventHeight}px`;
+    evDiv.style.top = `${topOffset}px`;
+    evDiv.style.left = '4px';
+    evDiv.style.right = '4px';
+
+    const columnInfo = eventColumns.get(evObj.id);
+    if (columnInfo && columnInfo.totalColumns > 1) {
+      const widthPercent = 100 / columnInfo.totalColumns;
+      const leftPercent = widthPercent * columnInfo.column;
+      evDiv.style.left = `calc(${leftPercent}% + 4px)`;
+      evDiv.style.right = `calc(${100 - leftPercent - widthPercent}% + 4px)`;
+      evDiv.style.width = `calc(${widthPercent}% - 8px)`;
+    }
+
+    evDiv.draggable = true;
+    evDiv.ondragstart = e => {
+      evDiv.classList.add('dragging');
+      e.dataTransfer.setData("text/plain", JSON.stringify({ 
+        type: "calendar-event", 
+        eventId: evObj.id 
+      }));
+    };
+    evDiv.ondragend = e => {
+      evDiv.classList.remove('dragging');
+    };
+
+    evDiv.innerHTML = `
+      <button class="delete-btn" onclick="deleteEvent(${evObj.id}, '${dateKey}')">×</button>
+      <div class="event-header">
+        <input type="checkbox" ${evObj.completed ? 'checked' : ''} onclick="toggleEventComplete(event, ${evObj.id}, '${dateKey}')">
+        <span class="event-duration">${formatDuration(evObj.duration)}</span>
+        <span class="event-separator">|</span>
+        <strong class="event-text" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; cursor: text;">${evObj.text}</strong>
+      </div>
+      <div class="resize-handle"></div>
+    `;
+
+    const resizeHandle = evDiv.querySelector('.resize-handle');
+    resizeHandle.addEventListener('mousedown', (e) => startResize(e, evObj.id, dateKey));
+
+    // Double-click to edit
+    const eventText = evDiv.querySelector('.event-text');
+    eventText.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      startEditEvent(evObj.id, dateKey, evObj, eventText);
+    });
+
+    return evDiv;
+  }
+
+  function startResize(e, eventId, dateKey) {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const event = data.events[dateKey].find(ev => ev.id === eventId);
+    if (!event) return;
+
+    resizing = {
+      eventId,
+      dateKey,
+      startY: e.clientY,
+      originalDuration: event.duration
+    };
+
+    const eventEl = document.querySelector(`[data-event-id="${eventId}"]`);
+    eventEl.classList.add('resizing');
+    eventEl.draggable = false; // Disable dragging during resize
+
+    // Prevent text selection during resize
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+
+    document.addEventListener('mousemove', onResizeMove);
+    document.addEventListener('mouseup', onResizeEnd);
+  }
+
+  function onResizeMove(e) {
+    if (!resizing) return;
+    e.preventDefault();
+    
+    const deltaY = e.clientY - resizing.startY;
+    const slotHeight = 75; // Must match CSS .slot min-height
+    const pixelsPerMinute = slotHeight / 60;
+    const deltaMinutes = Math.round(deltaY / pixelsPerMinute / 15) * 15; // Snap to 15 min
+    
+    const newDuration = Math.max(15, resizing.originalDuration + deltaMinutes);
+    
+    // Only update if duration changed
+    if (resizing.lastDuration === newDuration) return;
+    resizing.lastDuration = newDuration;
+    
+    const event = data.events[resizing.dateKey].find(ev => ev.id === resizing.eventId);
+    if (event) {
+      event.duration = newDuration;
+      
+      // Use requestAnimationFrame for smoother updates
+      requestAnimationFrame(() => {
+        const eventEl = document.querySelector(`[data-event-id="${resizing.eventId}"]`);
+        if (eventEl) {
+          eventEl.style.height = `${newDuration * pixelsPerMinute}px`;
+          const durationSpan = eventEl.querySelector('.event-duration');
+          if (durationSpan) durationSpan.textContent = formatDuration(newDuration);
+        }
+      });
+    }
+  }
+
+  function onResizeEnd() {
+    if (resizing) {
+      const eventEl = document.querySelector(`[data-event-id="${resizing.eventId}"]`);
+      if (eventEl) {
+        eventEl.classList.remove('resizing');
+        eventEl.draggable = true; // Re-enable dragging
+      }
+      resizing = null;
+      save();
+    }
+    
+    // Restore normal cursor and selection
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    
+    document.removeEventListener('mousemove', onResizeMove);
+    document.removeEventListener('mouseup', onResizeEnd);
+  }
+
+  function toggleEventComplete(e, eventId, dateKey) {
+    e.stopPropagation();
+    const event = data.events[dateKey].find(ev => ev.id === eventId);
+    if (event) {
+      event.completed = !event.completed;
+      save();
+      renderCalendar();
+    }
+  }
+
+  function deleteEvent(eventId, dateKey) {
+    data.events[dateKey] = data.events[dateKey].filter(ev => ev.id !== eventId);
+    save();
+    renderCalendar();
+  }
+
+  function startEditEvent(eventId, dateKey, eventObj, textElement) {
+    const currentText = eventObj.text;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = currentText;
+    input.style.width = "100%";
+    input.style.border = "1px solid #3b82f6";
+    input.style.borderRadius = "4px";
+    input.style.padding = "2px 4px";
+    input.style.fontSize = "11px";
+    input.style.background = "white";
+    input.style.outline = "none";
+    input.style.fontWeight = "600";
+    
+    const saveEdit = () => {
+      const newText = input.value.trim();
+      if (newText && newText !== currentText) {
+        const event = data.events[dateKey].find(ev => ev.id === eventId);
+        if (event) {
+          event.text = newText;
+          save();
+        }
+      }
+      renderCalendar();
+    };
+    
+    const cancelEdit = () => {
+      renderCalendar();
+    };
+    
+    input.onblur = saveEdit;
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveEdit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelEdit();
+      }
+    };
+    
+    // Prevent event dragging while editing
+    const eventDiv = textElement.closest('.event');
+    if (eventDiv) eventDiv.draggable = false;
+    
+    textElement.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  function addUntimedTask() {
+    const input = document.getElementById("newTask");
+    const durationSelect = document.getElementById("taskDuration");
+    if (!input.value.trim()) return;
+    
+    data.untimed.push({
+      text: input.value.trim(),
+      duration: parseInt(durationSelect.value),
+      completed: false
+    });
+    
+    input.value = "";
+    save();
+    renderUntimed();
+  }
+
+  function onDrop(e, hour, slot, targetDate) {
+    e.preventDefault();
+    const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
+    const dateKey = formatDate(targetDate || currentDate);
+
+    // Calculate which 15-minute segment was clicked
+    const slotRect = slot.getBoundingClientRect();
+    const clickY = e.clientY - slotRect.top;
+    const slotHeight = slotRect.height;
+    const segment = Math.floor((clickY / slotHeight) * 4); // 4 segments per hour
+    const minute = Math.min(segment * 15, 45); // 0, 15, 30, or 45
+
+    if (payload.type === "untimed") {
+      // Moving from untimed list to calendar
+      const task = data.untimed.splice(payload.idx, 1)[0];
+      // Handle old format (string) vs new format (object)
+      const taskObj = typeof task === 'string' ? { text: task, duration: 30, completed: false } : task;
+      data.events[dateKey].push({ 
+        id: Date.now(),
+        hour,
+        minute,
+        text: taskObj.text,
+        duration: taskObj.duration,
+        completed: taskObj.completed || false
+      });
+    } else if (payload.type === "calendar-event") {
+      // Find event in any date
+      let event = null;
+      let oldDateKey = null;
+      for (const key in data.events) {
+        event = data.events[key].find(ev => ev.id === payload.eventId);
+        if (event) {
+          oldDateKey = key;
+          break;
+        }
+      }
+      
+      if (event) {
+        // If moving to different date, remove from old date and add to new
+        if (oldDateKey !== dateKey) {
+          data.events[oldDateKey] = data.events[oldDateKey].filter(ev => ev.id !== payload.eventId);
+          if (!data.events[dateKey]) data.events[dateKey] = [];
+          data.events[dateKey].push(event);
+        }
+        // Update time
+        event.hour = hour;
+        event.minute = minute;
+      }
+    }
+    save();
+    renderUntimed();
+    renderCalendar();
+  }
+
+  function changeDay(delta) {
+    currentDate.setDate(currentDate.getDate() + delta);
+    renderDate();
+    renderCalendar();
+  }
+
+  function jumpToToday() {
+    currentDate = new Date();
+    renderDate();
+    renderCalendar();
+  }
+
+  // Setup untimed list as drop zone for calendar events
+  function setupUntimedDropZone() {
+    const untimedList = document.getElementById("untimedList");
+    let dragCounter = 0;
+    
+    untimedList.ondragenter = (e) => {
+      e.preventDefault();
+      dragCounter++;
+      untimedList.classList.add('drag-over');
+    };
+    
+    untimedList.ondragover = (e) => {
+      e.preventDefault();
+    };
+    
+    untimedList.ondragleave = (e) => {
+      dragCounter--;
+      if (dragCounter === 0) {
+        untimedList.classList.remove('drag-over');
+      }
+    };
+    
+    untimedList.ondrop = (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      untimedList.classList.remove('drag-over');
+      
+      const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
+      
+      if (payload.type === "calendar-event") {
+        // Find the event in any date
+        let event = null;
+        let eventDateKey = null;
+        for (const dateKey in data.events) {
+          event = data.events[dateKey].find(ev => ev.id === payload.eventId);
+          if (event) {
+            eventDateKey = dateKey;
+            break;
+          }
+        }
+        
+        if (event && eventDateKey) {
+          // Remove from calendar
+          data.events[eventDateKey] = data.events[eventDateKey].filter(ev => ev.id !== payload.eventId);
+          
+          // Add to untimed list
+          data.untimed.push({
+            text: event.text,
+            duration: event.duration,
+            completed: event.completed || false
+          });
+          
+          save();
+          renderUntimed();
+          renderCalendar();
+        }
+      }
+    };
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Only trigger if not typing in an input field
+    if (e.target.matches('input, textarea')) return;
+    
+    // Z key to toggle zen mode
+    if (e.key === 'z' || e.key === 'Z') {
+      toggleZenMode();
+    }
+    
+    // [ key to toggle sidebar
+    if (e.key === '[' || e.key === ']') {
+      if (!isZenMode) {
+        toggleSidebar();
+      }
+    }
+    
+    // Escape key to exit zen mode
+    if (e.key === 'Escape' && isZenMode) {
+      toggleZenMode();
+    }
+  });
+
+  renderDate();
+  renderUntimed();
+  renderCalendar();
+  setupUntimedDropZone();
+  loadZenMode();
+  loadSidebarState();
+
+  // Handle window resize for mobile/desktop transitions
+  let resizeTimeout;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      const wasMobile = isSidebarCollapsed;
+      loadSidebarState();
+    }, 300);
+  });
+</script>
+
+<!-- Firebase Configuration and Authentication -->
+<script>
+  /*
+   * FIREBASE SETUP INSTRUCTIONS:
+   * 
+   * 1. Go to https://console.firebase.google.com/
+   * 2. Create a new project or select existing one
+   * 3. Go to Project Settings > General
+   * 4. Scroll down to "Your apps" and click "Web" (</> icon)
+   * 5. Register your app with a nickname
+   * 6. Copy the firebaseConfig object and replace the one below
+   * 7. Go to Authentication > Sign-in method
+   * 8. Enable "Email/Password" provider
+   * 9. Save and reload this page!
+   */
+
+  // Firebase configuration - REPLACE WITH YOUR OWN CONFIG
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  // Initialize Firebase
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+
+  // Auth state variables
+  let isSignUpMode = false;
+  let currentUser = null;
+
+  // Toggle between sign in and sign up
+  function toggleAuthMode() {
+    isSignUpMode = !isSignUpMode;
+    const submitBtn = document.getElementById('authSubmitBtn');
+    const toggleText = document.getElementById('authToggleText');
+    const subtitle = document.getElementById('authSubtitle');
+    const toggleBtn = document.querySelector('.auth-toggle button');
+
+    if (isSignUpMode) {
+      submitBtn.textContent = 'Sign Up';
+      toggleText.textContent = 'Already have an account?';
+      toggleBtn.textContent = 'Sign In';
+      subtitle.textContent = 'Create your account to get started';
+    } else {
+      submitBtn.textContent = 'Sign In';
+      toggleText.textContent = "Don't have an account?";
+      toggleBtn.textContent = 'Sign Up';
+      subtitle.textContent = 'Sign in to access your tasks';
+    }
+
+    // Clear error
+    hideAuthError();
+  }
+
+  // Handle authentication (sign in or sign up)
+  async function handleAuth(event) {
+    event.preventDefault();
+
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    const submitBtn = document.getElementById('authSubmitBtn');
+
+    // Disable button and show loading
+    submitBtn.disabled = true;
+    submitBtn.textContent = isSignUpMode ? 'Creating account...' : 'Signing in...';
+    hideAuthError();
+
+    try {
+      if (isSignUpMode) {
+        // Sign up
+        await auth.createUserWithEmailAndPassword(email, password);
+      } else {
+        // Sign in
+        await auth.signInWithEmailAndPassword(email, password);
+      }
+    } catch (error) {
+      showAuthError(getErrorMessage(error.code));
+      submitBtn.disabled = false;
+      submitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+    }
+  }
+
+  // Handle logout
+  async function handleLogout() {
+    try {
+      await auth.signOut();
+    } catch (error) {
+      console.error('Logout error:', error);
+      alert('Error logging out. Please try again.');
+    }
+  }
+
+  // Show authentication error
+  function showAuthError(message) {
+    const errorEl = document.getElementById('authError');
+    errorEl.textContent = message;
+    errorEl.classList.add('show');
+  }
+
+  // Hide authentication error
+  function hideAuthError() {
+    const errorEl = document.getElementById('authError');
+    errorEl.classList.remove('show');
+  }
+
+  // Get user-friendly error messages
+  function getErrorMessage(errorCode) {
+    const errorMessages = {
+      'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
+      'auth/invalid-email': 'Please enter a valid email address.',
+      'auth/operation-not-allowed': 'Email/password accounts are not enabled.',
+      'auth/weak-password': 'Password should be at least 6 characters.',
+      'auth/user-disabled': 'This account has been disabled.',
+      'auth/user-not-found': 'No account found with this email.',
+      'auth/wrong-password': 'Incorrect password. Please try again.',
+      'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
+      'auth/network-request-failed': 'Network error. Please check your connection.',
+      'auth/invalid-credential': 'Invalid email or password.'
+    };
+
+    return errorMessages[errorCode] || 'An error occurred. Please try again.';
+  }
+
+  // Show/hide app content
+  function showApp() {
+    document.getElementById('authContainer').classList.add('hidden');
+    document.getElementById('appContent').classList.remove('hidden');
+    document.getElementById('userInfo').style.display = 'flex';
+    document.getElementById('logoutBtn').style.display = 'block';
+  }
+
+  function hideApp() {
+    document.getElementById('authContainer').classList.remove('hidden');
+    document.getElementById('appContent').classList.add('hidden');
+    document.getElementById('userInfo').style.display = 'none';
+    document.getElementById('logoutBtn').style.display = 'none';
+  }
+
+  // Auth state observer
+  auth.onAuthStateChanged((user) => {
+    if (user) {
+      // User is signed in
+      currentUser = user;
+      document.getElementById('userEmail').textContent = user.email;
+      showApp();
+      
+      // Initialize app if not already done
+      if (!window.appInitialized) {
+        window.appInitialized = true;
+      }
+    } else {
+      // User is signed out
+      currentUser = null;
+      hideApp();
+      
+      // Reset form
+      document.getElementById('authForm').reset();
+      document.getElementById('authSubmitBtn').disabled = false;
+      document.getElementById('authSubmitBtn').textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+      hideAuthError();
+    }
+  });
+</script>
+</div> <!-- End of app-content -->
+</body>
+</html>
