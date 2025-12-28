@@ -1199,7 +1199,7 @@
              Logout
            </button>
            
-           <button class="secondary" onclick="clearCalendar()">Clear Calendar</button>
+           <button class="secondary" style="background-color: red;" onclick="clearCalendar()">Clear Calendar</button>
            
             <!-- Zen Mode Toggle Button -->
            <button class="zen-mode-btn" onclick="toggleZenMode()" title="Toggle Zen Mode (Press Z)">
@@ -1643,13 +1643,19 @@
   setInterval(renderDate, 1000);
 
   function clearCalendar() {
-    data = {
-      untimed: [],
-      events: {}
-    };
-    save();
-    renderUntimed();
-    renderCalendar();
+    // Show confirmation alert
+    const confirmDelete = confirm("⚠️ WARNING: All your data will be permanently deleted and cannot be recovered. Are you sure you want to clear all data?");
+    
+    // Only proceed if user clicks OK
+    if (confirmDelete) {
+      data = {
+        untimed: [],
+        events: {}
+      };
+      save();
+      renderUntimed();
+      renderCalendar();
+    }
   }
 
   function formatDuration(minutes) {
