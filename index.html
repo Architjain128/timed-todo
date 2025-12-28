@@ -8,6 +8,7 @@
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <style>
     :root {
       --calendar-scale: 1.5;
@@ -1068,6 +1069,44 @@
       display: none;
     }
 
+    /* Sync indicator */
+    .sync-indicator {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(34, 197, 94, 0.95);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      pointer-events: none;
+    }
+
+    .sync-indicator.show {
+      opacity: 1;
+    }
+
+    .sync-indicator.error {
+      background: rgba(239, 68, 68, 0.95);
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .sync-spinner {
+      display: inline-block;
+      animation: spin 1s linear infinite;
+    }
+
     /* Mobile responsiveness for auth */
     @media (max-width: 480px) {
       .auth-box {
@@ -1130,6 +1169,12 @@
     <div class="app-content hidden" id="appContent">
       <!-- Zen Mode Notification -->
       <div class="zen-notification" id="zenNotification"></div>
+
+      <!-- Sync Indicator -->
+      <div class="sync-indicator" id="syncIndicator">
+        <span class="sync-spinner">⟳</span>
+        <span id="syncText">Syncing...</span>
+      </div>
 
       <header style="display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
         <div class="title">
@@ -1371,13 +1416,14 @@
     STORAGE_KEY = `calendar_todo_data_v4_${USER_UUID}`;
   }
   
-  let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+  let data = {
     untimed: [], // [{ text, duration, completed }]
     events: {} // date -> [{ hour, minute, text, duration, id, completed }]
   };
 
   let resizing = null; // { eventId, startY, originalDuration }
   let completedSectionCollapsed = false;
+  let isSavingToFirestore = false; // Prevent save loops
 
   // Daily cleanup - move incomplete tasks back to untimed
   function checkDailyCleanup() {
@@ -1447,8 +1493,121 @@
   // Start daily cleanup checker
   checkDailyCleanup();
 
-  function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  // Show sync indicator
+  function showSyncIndicator(message, isError = false) {
+    const indicator = document.getElementById('syncIndicator');
+    const text = document.getElementById('syncText');
+    
+    if (indicator && text) {
+      text.textContent = message;
+      indicator.classList.toggle('error', isError);
+      indicator.classList.add('show');
+      
+      // Auto-hide after 2 seconds
+      setTimeout(() => {
+        indicator.classList.remove('show');
+      }, 2000);
+    }
+  }
+
+  // Save data to Firestore
+  async function save() {
+    if (!currentUser || isSavingToFirestore) return;
+    
+    try {
+      isSavingToFirestore = true;
+      showSyncIndicator('Syncing...', false);
+      
+      await db.collection('users').doc(currentUser.uid).set({
+        data: data,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      
+      showSyncIndicator('✓ Synced', false);
+    } catch (error) {
+      console.error('Error saving to Firestore:', error);
+      showSyncIndicator('⚠ Sync failed - saved locally', true);
+      
+      // Fallback to localStorage
+      localStorage.setItem(`calendar_todo_backup_${currentUser.uid}`, JSON.stringify(data));
+    } finally {
+      isSavingToFirestore = false;
+    }
+  }
+
+  // Load data from Firestore
+  async function loadDataFromFirestore() {
+    if (!currentUser) return;
+    
+    try {
+      const doc = await db.collection('users').doc(currentUser.uid).get();
+      if (doc.exists) {
+        const userData = doc.data();
+        if (userData.data) {
+          data = userData.data;
+          renderUntimed();
+          renderCalendar();
+        }
+      } else {
+        // Try to migrate from localStorage
+        await migrateFromLocalStorage();
+      }
+    } catch (error) {
+      console.error('Error loading from Firestore:', error);
+      // Try localStorage backup
+      const backup = localStorage.getItem(`calendar_todo_backup_${currentUser.uid}`);
+      if (backup) {
+        data = JSON.parse(backup);
+        renderUntimed();
+        renderCalendar();
+      }
+    }
+  }
+
+  // Migrate existing localStorage data to Firestore
+  async function migrateFromLocalStorage() {
+    if (!currentUser) return;
+    
+    try {
+      // Try to find old localStorage data
+      const oldData = localStorage.getItem(STORAGE_KEY) || 
+                      localStorage.getItem(OLD_STORAGE_KEY);
+      
+      if (oldData) {
+        data = JSON.parse(oldData);
+        await save(); // Save to Firestore
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(OLD_STORAGE_KEY);
+        console.log('✅ Migrated data from localStorage to Firestore');
+      }
+    } catch (error) {
+      console.error('Error migrating data:', error);
+    }
+  }
+
+  // Set up real-time listener for data sync
+  function setupFirestoreListener() {
+    if (!currentUser) return;
+    
+    // Unsubscribe from previous listener if exists
+    if (dataUnsubscribe) {
+      dataUnsubscribe();
+    }
+    
+    // Listen to real-time updates
+    dataUnsubscribe = db.collection('users').doc(currentUser.uid)
+      .onSnapshot((doc) => {
+        if (doc.exists && !isSavingToFirestore) {
+          const userData = doc.data();
+          if (userData.data) {
+            data = userData.data;
+            renderUntimed();
+            renderCalendar();
+          }
+        }
+      }, (error) => {
+        console.error('Firestore listener error:', error);
+      });
   }
 
   function formatDate(d) {
@@ -2313,12 +2472,9 @@
     }
   });
 
-  renderDate();
-  renderUntimed();
-  renderCalendar();
-  setupUntimedDropZone();
-  loadZenMode();
-  loadSidebarState();
+  // Initial setup - these will be called after user logs in
+  // Clock update runs regardless of auth state
+  setInterval(renderDate, 1000);
 
   // Handle window resize for mobile/desktop transitions
   let resizeTimeout;
@@ -2360,10 +2516,12 @@
   // Initialize Firebase
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
+  const db = firebase.firestore();
 
   // Auth state variables
   let isSignUpMode = false;
   let currentUser = null;
+  let dataUnsubscribe = null; // Firestore listener unsubscribe function
 
   // Toggle between sign in and sign up
   function toggleAuthMode() {
@@ -2474,20 +2632,45 @@
   }
 
   // Auth state observer
-  auth.onAuthStateChanged((user) => {
+  auth.onAuthStateChanged(async (user) => {
     if (user) {
       // User is signed in
       currentUser = user;
       document.getElementById('userEmail').textContent = user.email;
       showApp();
       
+      // Load user data from Firestore
+      await loadDataFromFirestore();
+      
+      // Set up real-time sync
+      setupFirestoreListener();
+      
       // Initialize app if not already done
       if (!window.appInitialized) {
         window.appInitialized = true;
+        renderDate();
+        renderUntimed();
+        renderCalendar();
+        setupUntimedDropZone();
+        loadZenMode();
+        loadSidebarState();
       }
     } else {
       // User is signed out
       currentUser = null;
+      
+      // Unsubscribe from Firestore listener
+      if (dataUnsubscribe) {
+        dataUnsubscribe();
+        dataUnsubscribe = null;
+      }
+      
+      // Clear data
+      data = {
+        untimed: [],
+        events: {}
+      };
+      
       hideApp();
       
       // Reset form
